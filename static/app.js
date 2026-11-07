@@ -13,7 +13,8 @@
  * 可选增强：#record-type-tabs 收支按钮、#amount-keypad 数字键盘，
  * #amount-display/#amount-expression 金额与算式、#month-picker 月份输入框，
  * #chart-view-toggle 图表切换按钮。
- * #filter-toggle-btn：筛选开关；aria-controls 指向面板，缺省为 #filter-panel 或筛选表单。
+ * #filter-drawer / #filter-toggle-btn：使用 details/summary 原生筛选抽屉。
+ * 筛选展开只由浏览器控制，脚本监听 toggle 同步 aria-expanded 和 .is-active。
  * #message-toast（或骨架中的 #build-status）：提示区域；#refresh-button：刷新。
  * 页面缺少某个区域时跳过该功能；分类图前补充统计范围说明。
  */
@@ -217,9 +218,9 @@
         icon.setAttribute("aria-hidden", "true");
         const detail = document.createElement("div");
         detail.className = "record-copy";
-        const name = document.createElement("b");
+        const name = document.createElement("strong");
         name.textContent = record.category;
-        const note = document.createElement("small");
+        const note = document.createElement("p");
         note.textContent = record.note || "暂无备注";
         detail.append(name, note);
         const amount = document.createElement("strong");
@@ -245,12 +246,18 @@
     if (!ui.chart) return;
     let note = document.getElementById("chart-scope-note");
     if (!note) {
-      note = document.createElement("p");
+      // D2 的气泡区域使用绝对定位；复用标题内的说明，避免插入段落被气泡遮挡。
+      const heading = ui.chart.previousElementSibling;
+      note = heading?.classList.contains("chart-heading") ? heading.querySelector("small") : null;
+      if (!note) {
+        note = document.createElement("p");
+        ui.chart.before(note);
+      }
       note.id = "chart-scope-note";
-      note.className = "muted chart-scope-note";
-      ui.chart.before(note);
+      note.classList.add("muted", "chart-scope-note");
     }
-    note.textContent = "分类图统计范围：全部日期的支出，不随月份或其他筛选条件变化。列表和收支汇总按当前查询条件计算。";
+    note.textContent = "图表：全部日期支出；汇总、列表：按筛选";
+    note.title = "分类图不随月份或其他筛选条件变化；列表和收支汇总按当前查询条件计算。";
     const descriptions = new Set((ui.chart.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean));
     descriptions.add(note.id);
     ui.chart.setAttribute("aria-describedby", [...descriptions].join(" "));
@@ -596,22 +603,16 @@
     });
     switchView("home-view");
     const filterToggle = document.getElementById("filter-toggle-btn");
-    if (filterToggle && ui.filterForm) {
-      const panel = document.getElementById(filterToggle.getAttribute("aria-controls")) ||
-        document.getElementById("filter-panel") || ui.filterForm;
-      if (!panel.id) panel.id = "filter-panel";
-      filterToggle.setAttribute("aria-controls", panel.id);
-      const syncFilterToggle = () => {
-        filterToggle.setAttribute("aria-expanded", String(!panel.hidden));
-        filterToggle.classList.toggle("is-active", !panel.hidden);
-        panel.classList.toggle("is-active", !panel.hidden);
+    // closest 兼容 D2 尚未补上 filter-drawer ID 的原生 details 页面。
+    const filterDrawer = document.getElementById("filter-drawer") || filterToggle?.closest("details");
+    if (filterDrawer && filterToggle) {
+      const syncFilterState = () => {
+        const expanded = filterDrawer.open;
+        filterToggle.setAttribute("aria-expanded", String(expanded));
+        filterToggle.classList.toggle("is-active", expanded);
       };
-      syncFilterToggle();
-      filterToggle.addEventListener("click", (event) => {
-        event.preventDefault();
-        panel.hidden = !panel.hidden;
-        syncFilterToggle();
-      });
+      filterDrawer.addEventListener("toggle", syncFilterState);
+      syncFilterState();
     }
     ui.chartToggle?.addEventListener("click", () => {
       if (!ui.chart) return;
