@@ -1,0 +1,9 @@
+/* 基础可读性样式；实际产品界面由 D2 独立编写。 */
+:root { font-family: system-ui, "Microsoft YaHei", sans-serif; color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #f6f7f9; color: #242a32; }
+.layout { max-width: 960px; margin: 56px auto; padding: 0 20px; }
+.panel { padding: 28px; background: #fff; border: 1px solid #e7eaf0; border-radius: 12px; }
+.eyebrow { font-size: 13px; color: #5c718e; }
+h1 { margin: 8px 0 12px; }
+#build-status { color: #866018; }

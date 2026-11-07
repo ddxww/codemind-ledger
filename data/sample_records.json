@@ -1,0 +1,18 @@
+[
+  {
+    "id": "sample_001",
+    "type": "expense",
+    "date": "2026-11-07",
+    "amount": 25.5,
+    "category": "餐饮",
+    "note": "示例午餐"
+  },
+  {
+    "id": "sample_002",
+    "type": "income",
+    "date": "2026-11-07",
+    "amount": 1000,
+    "category": "奖学金",
+    "note": "示例收入"
+  }
+]
