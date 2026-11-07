@@ -13,8 +13,9 @@
  * 可选增强：#record-type-tabs 收支按钮、#amount-keypad 数字键盘，
  * #amount-display/#amount-expression 金额与算式、#month-picker 月份输入框，
  * #chart-view-toggle 图表切换按钮。
+ * #filter-toggle-btn：筛选开关；aria-controls 指向面板，缺省为 #filter-panel 或筛选表单。
  * #message-toast（或骨架中的 #build-status）：提示区域；#refresh-button：刷新。
- * 页面缺少某个区域时跳过该功能，不创建或覆盖 D2 的页面结构。
+ * 页面缺少某个区域时跳过该功能；分类图前补充统计范围说明。
  */
 (() => {
   "use strict";
@@ -34,6 +35,7 @@
   let activeFilters = {};
   let viewVersion = 0;
   let submitting = false;
+  let messageTimer;
   let amountExpression = "";
   const categoryIcons = { 餐饮: "🍚", 交通: "🚕", 购物: "🛍️", 学习: "📚", 娱乐: "🎮",
     医疗: "💊", 其他支出: "📦", 工资: "💼", 奖学金: "🎓", 兼职: "🧰", 其他收入: "🪙" };
@@ -44,12 +46,17 @@
 
   function notify(message, kind = "info") {
     if (!ui.message) return;
+    clearTimeout(messageTimer);
     ui.message.textContent = message;
     ui.message.dataset.kind = kind;
     ui.message.hidden = false;
     ui.message.classList.add("is-active");
     ui.message.classList.toggle("has-error", kind === "error");
     ui.message.setAttribute("role", kind === "error" ? "alert" : "status");
+    if (kind === "success") messageTimer = setTimeout(() => {
+      ui.message.hidden = true;
+      ui.message.classList.remove("is-active");
+    }, 2500);
   }
 
   // 本地校验只改善交互；服务端仍须校验所有字段。
@@ -114,9 +121,9 @@
       button.classList.toggle("is-selected", button.dataset.recordType === type);
     });
     if (!ui.picker) return;
+    const current = field(ui.recordForm, "category")?.value;
     ui.picker.replaceChildren();
     if (!categories) { ui.picker.textContent = "正在等待类别数据，可点击刷新重试"; return; }
-    const current = field(ui.recordForm, "category")?.value;
     (categories[type] || []).forEach((category) => {
       const button = document.createElement("button");
       button.type = "button";
@@ -193,8 +200,9 @@
     const fragment = document.createDocumentFragment();
     grouped.forEach((rows, date) => {
       const group = document.createElement(["UL", "OL"].includes(ui.groups.tagName) ? "li" : "section");
-      group.className = "record-day";
+      group.className = "record-day record-group";
       const heading = document.createElement("h3");
+      heading.className = "date-chip";
       const expense = rows.filter((row) => row.type === "expense").reduce((sum, row) => sum + Math.round(row.amount * 100), 0) / 100;
       const income = rows.filter((row) => row.type === "income").reduce((sum, row) => sum + Math.round(row.amount * 100), 0) / 100;
       heading.textContent = `${date} · 支出 ${formatMoney(expense)}${income ? ` · 收入 ${formatMoney(income)}` : ""}`;
@@ -204,13 +212,14 @@
         row.className = "record-item";
         row.dataset.type = record.type;
         const icon = document.createElement("span");
-        icon.className = "record-icon";
+        icon.className = "record-icon record-emoji";
         icon.textContent = categoryIcons[record.category] || "🪙";
         icon.setAttribute("aria-hidden", "true");
         const detail = document.createElement("div");
-        const name = document.createElement("strong");
+        detail.className = "record-copy";
+        const name = document.createElement("b");
         name.textContent = record.category;
-        const note = document.createElement("p");
+        const note = document.createElement("small");
         note.textContent = record.note || "暂无备注";
         detail.append(name, note);
         const amount = document.createElement("strong");
@@ -229,7 +238,22 @@
   }
 
   function hasSummary() {
-    return [ui.income, ui.expense, ui.balance, ui.count].some(Boolean) || document.querySelector("[data-summary]");
+    return ["income", "expense", "balance", "count"].some((key) => summaryTargets(key).length > 0);
+  }
+
+  function showChartScope() {
+    if (!ui.chart) return;
+    let note = document.getElementById("chart-scope-note");
+    if (!note) {
+      note = document.createElement("p");
+      note.id = "chart-scope-note";
+      note.className = "muted chart-scope-note";
+      ui.chart.before(note);
+    }
+    note.textContent = "分类图统计范围：全部日期的支出，不随月份或其他筛选条件变化。列表和收支汇总按当前查询条件计算。";
+    const descriptions = new Set((ui.chart.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean));
+    descriptions.add(note.id);
+    ui.chart.setAttribute("aria-describedby", [...descriptions].join(" "));
   }
 
   function renderSummary(summary) {
@@ -263,7 +287,7 @@
       const button = document.createElement("button");
       button.type = "button";
       button.dataset.chartCategory = row.category;
-      button.className = "chart-category category-bubble";
+      button.className = "chart-category category-bubble stat-bubble";
       button.style.setProperty("--bubble-weight", String(Math.sqrt(row.amount / largest)));
       button.setAttribute("aria-label", `${row.category}：${formatMoney(row.amount)}，占比 ${(row.amount / total * 100).toFixed(1)}%，点击筛选此类别`);
       const label = document.createElement("span");
@@ -511,6 +535,7 @@
     Object.entries(ids).forEach(([key, id]) => { ui[key] = document.getElementById(id); });
     ui.message ||= document.getElementById("build-status");
     if (ui.chart && !ui.chart.dataset.view) ui.chart.dataset.view = "bubble";
+    showChartScope();
     if (!ui.recordForm && !ui.filterForm && !ui.records && !ui.groups && !ui.chart &&
       !hasSummary()) {
       notify("前端交互脚本已加载，等待页面接入表单、记录和统计区域");
@@ -560,10 +585,34 @@
       if (ui.amount) ui.amount.textContent = money.format(Number(amountExpression) || 0);
       if (ui.expression) ui.expression.textContent = amountExpression || "请输入金额";
     });
-    document.getElementById("open-add-btn")?.addEventListener("click", () => { switchView("add-view"); setDefaultDate(); });
-    document.getElementById("open-stats-btn")?.addEventListener("click", () => switchView("stats-view"));
-    document.querySelectorAll(".back-home-btn").forEach((button) => button.addEventListener("click", () => switchView("home-view")));
+    document.getElementById("open-add-btn")?.addEventListener("click", (event) => {
+      event.preventDefault(); switchView("add-view"); setDefaultDate();
+    });
+    document.getElementById("open-stats-btn")?.addEventListener("click", (event) => {
+      event.preventDefault(); switchView("stats-view");
+    });
+    document.querySelectorAll(".back-home-btn").forEach((button) => {
+      button.addEventListener("click", (event) => { event.preventDefault(); switchView("home-view"); });
+    });
     switchView("home-view");
+    const filterToggle = document.getElementById("filter-toggle-btn");
+    if (filterToggle && ui.filterForm) {
+      const panel = document.getElementById(filterToggle.getAttribute("aria-controls")) ||
+        document.getElementById("filter-panel") || ui.filterForm;
+      if (!panel.id) panel.id = "filter-panel";
+      filterToggle.setAttribute("aria-controls", panel.id);
+      const syncFilterToggle = () => {
+        filterToggle.setAttribute("aria-expanded", String(!panel.hidden));
+        filterToggle.classList.toggle("is-active", !panel.hidden);
+        panel.classList.toggle("is-active", !panel.hidden);
+      };
+      syncFilterToggle();
+      filterToggle.addEventListener("click", (event) => {
+        event.preventDefault();
+        panel.hidden = !panel.hidden;
+        syncFilterToggle();
+      });
+    }
     ui.chartToggle?.addEventListener("click", () => {
       if (!ui.chart) return;
       const bubble = ui.chart.dataset.view !== "bubble";
